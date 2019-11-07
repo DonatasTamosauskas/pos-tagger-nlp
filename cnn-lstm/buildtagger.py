@@ -31,13 +31,13 @@ def train_model(train_file, model_file):
         dataset,
         batch_size=128,
         collate_fn=pad_seq,
-        num_workers=48
+        num_workers=32
     )
 
     model_cnn = LstmCnnTagger(
-        word_emb_dim=512, 
+        word_emb_dim=256, 
         letter_emb_dim=30, 
-        hidden_dim=512, 
+        hidden_dim=256, 
         word_vocab_size=dataset.vocab_size, 
         letter_vocab_size=dataset.letter_len, 
         letter_word_size=dataset.letter_emb_len, 
@@ -46,7 +46,7 @@ def train_model(train_file, model_file):
 
     execute_training(model_cnn, pos_dataloader_batched, epochs=2, lr=0.01, patience=70)
     execute_training(model_cnn, pos_dataloader_batched, epochs=3, lr=0.001, patience=100)
-    export_model(model_cnn, dataset, 5)
+    export_model(model_cnn, dataset, 5, model_file)
 
     print('Finished in: ', datetime.datetime.now() - start)
 		
@@ -296,12 +296,12 @@ def execute_training(model, data_loader, epochs=1, lr=0.01, patience=10, lr_decr
     print("Min loss: " + str(min(losses)))
 
 
-def export_model(model, dataset, train_time):
-    model_name = str(type(model)).split(".")[-1][:-2]
-    model_save_name = model_name + "_" + str(train_time)
+def export_model(model, dataset, train_time, location):
+    #model_name = str(type(model)).split(".")[-1][:-2]
+    #model_save_name = model_name + "_" + str(train_time)
 
-    torch.save(model, model_save_name + "_1.data")
-    torch.save(dataset, model_save_name + "_2.data")
+    torch.save(model, location + "_1.data")
+    torch.save(dataset, location + "_2.data")
 
 
 if __name__ == "__main__":
