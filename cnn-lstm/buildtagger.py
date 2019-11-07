@@ -44,18 +44,12 @@ def train_model(train_file, model_file):
         tagset_size=dataset.tag_size
     )
 
-    train_model(model_cnn, pos_dataloader_batched, epochs=2, lr=0.01, patience=70)
-    train_model(model_cnn, pos_dataloader_batched, epochs=3, lr=0.001, patience=100)
+    execute_training(model_cnn, pos_dataloader_batched, epochs=2, lr=0.01, patience=70)
+    execute_training(model_cnn, pos_dataloader_batched, epochs=3, lr=0.001, patience=100)
     export_model(model_cnn, dataset, 5)
 
     print('Finished in: ', datetime.datetime.now() - start)
 		
-if __name__ == "__main__":
-    # make no changes here
-    train_file = sys.argv[1]
-    model_file = sys.argv[2]
-    train_model(train_file, model_file)
-
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, path, to_lower=True, training=True, make_unknown=None, letter_emb_len=15, too_long_split=10):
@@ -255,9 +249,9 @@ def pad_seq(sequences):
     return (pad_sequence(x_word, batch_first=True), pad_sequence(x_let, batch_first=True)) , pad_sequence(y, batch_first=True)
 
 
-def train_model(model, data_loader, epochs=1, lr=0.01, patience=10, lr_decrease=2):
+def execute_training(model, data_loader, epochs=1, lr=0.01, patience=10, lr_decrease=2):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    print("Device: {}". format(device))
+    print("Device: ", device)
 
     loss_func = nn.NLLLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -271,7 +265,7 @@ def train_model(model, data_loader, epochs=1, lr=0.01, patience=10, lr_decrease=
     model.to(device)
     model.zero_grad()
 
-    for epoch in master:
+    for epoch in range(epochs):
         for (x1, x2), y in data_loader:
 
             model.zero_grad()
@@ -308,3 +302,10 @@ def export_model(model, dataset, train_time):
 
     torch.save(model, model_save_name + "_1.data")
     torch.save(dataset, model_save_name + "_2.data")
+
+
+if __name__ == "__main__":
+    # make no changes here
+    train_file = sys.argv[1]
+    model_file = sys.argv[2]
+    train_model(train_file, model_file)
