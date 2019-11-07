@@ -24,7 +24,7 @@ def tag_sentence(test_file, model_file, out_file):
     predictions = generate_results(model, dataset, num_workers=32)
     export_preds(predictions, out_file)
     
-    print('Finished in: ', start - datetime.datetime.now())
+    print('Finished in: ', datetime.datetime.now() - start)
 
 
 class Dataset(torch.utils.data.Dataset):
