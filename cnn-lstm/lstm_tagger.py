@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from fastprogress import progress_bar, master_bar
 import matplotlib.pyplot as plt
 from pathlib import Path
 import numpy as np
@@ -239,9 +240,9 @@ class LstmCnnTagger(nn.Module):
         self.letter_embeddings = nn.Embedding(letter_vocab_size, letter_emb_dim)
         
         # Should I add more hidden layers?
-        self.cnn1 = nn.Conv2d(in_channels=1, out_channels=23, kernel_size=5)
+        self.cnn1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=5)
         self.max_pool = nn.MaxPool2d(2,2)
-        self.cnn2 = nn.Conv2d(in_channels=23, out_channels=word_emb_dim, kernel_size=3)
+        self.cnn2 = nn.Conv2d(in_channels=32, out_channels=word_emb_dim, kernel_size=3)
         self.max_pool_last = nn.MaxPool2d(2, 10)
 
         self.lstm = nn.LSTM(word_emb_dim * 2, hidden_dim)
@@ -355,7 +356,7 @@ def generate_results(model, dataset, num_workers=0):
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=num_workers)
     preds = []
     for i, (x, _) in enumerate(dataloader):
-        if i % 100 == 0: 
+        if i % 400 == 0: 
             print("{} | {}".format(i, len(dataloader.dataset)))
             
         predictions = model(x)
@@ -380,9 +381,14 @@ def export_preds(preds, filename):
 
 
 
-dataset = Dataset(training_data, make_unknown=0.05)
+dataset = Dataset(
+    training_data,
+    make_unknown=0.01,
+    letter_emb_len=15,
+    too_long_split=10
+)
 
-num_workers = 2
+num_workers = 48
 
 pos_dataloader = DataLoader(
     dataset, 
@@ -398,27 +404,27 @@ pos_dataloader_batched = DataLoader(
 )
 
 model_cnn = LstmCnnTagger(
-    word_emb_dim=128, 
+    word_emb_dim=512, 
     letter_emb_dim=30, 
-    hidden_dim=128, 
+    hidden_dim=512, 
     word_vocab_size=dataset.vocab_size, 
     letter_vocab_size=dataset.letter_len, 
     letter_word_size=dataset.letter_emb_len, 
     tagset_size=dataset.tag_size
 )
 
-train_model(model_cnn, pos_dataloader_batched, epochs=1, lr=0.01, patience=50)
-
-
-export_model(model, dataset, 5)
+train_model(model_cnn, pos_dataloader_batched, epochs=1, lr=0.01, patience=70)
+#train_model(model_cnn, pos_dataloader_batched, epochs=3, lr=0.001, patience=100)
+#export_model(model_cnn, dataset, 5)
 
 import copy
 test_data = Path("../data/sents.test")
 
 test_dataset = prepare_dataset_infer(copy.deepcopy(dataset), test_data)
-predictions = generate_results(model_cnn, test_dataset, num_workers=2)
+predictions = generate_results(model_cnn, test_dataset, num_workers=48)
 export_preds(predictions, "test_output.txt")
-!python3 ../data/eval.py test_output.txt ../data/sents.answer
+#!python3 ../data/eval.py test_output.txt ../data/sents.answer
 
 #Accuracy= 0.8980328763672244 - 2 epochs, lr: 0.01, unk: 0.01->0.50
 #Accuracy= 0.9002792181890706 - 2 epochs, lr: 0.005, unk: 0.05
+#Accuracy= 0.9389288938341066 - 3 epochs, lr 0.01x2 -> 0.001, patience: 70 -> 100
