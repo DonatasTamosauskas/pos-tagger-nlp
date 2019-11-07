@@ -1,18 +1,10 @@
-import os
-import math
-import sys
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from fastprogress import progress_bar, master_bar
-import matplotlib.pyplot as plt
 from pathlib import Path
 import numpy as np
-
-KAGGLE = False
 
 training_data = Path("../input/sents.train") if KAGGLE else Path("../data/sents.train")
 
@@ -28,22 +20,20 @@ class Dataset(torch.utils.data.Dataset):
         self.make_unknown = make_unknown
         self.letter_emb_len = letter_emb_len
         self.too_long_split = too_long_split
-        
+
         self.sentences = []
         self.vocab = []
         self.tags = []
-        
+
         self.generate_dataset(path)
         self.UNKONWN_WORD = len(self.vocab) + 1
-        
+
         self.LETTER_MIN = 32
         self.LETTER_MAX = 126
         self.letter_len = self.LETTER_MAX - self.LETTER_MIN + 2
         self.UNKNOWN_LETTER = self.letter_len
-        
 
 
-    
     def __len__(self):
         return len(self.sentences)
     
@@ -95,7 +85,6 @@ class Dataset(torch.utils.data.Dataset):
             except RuntimeError:
                 print("Not a valid word/tag pair: " + word_tag)
             except ValueError:
-#                 print("Word not in the vocab: " + word_tag)
                 # The id of an unknown word
                 word_id = self.UNKONWN_WORD
 
@@ -180,57 +169,10 @@ def pad_seq(sequences):
     return (pad_sequence(x_word, batch_first=True), pad_sequence(x_let, batch_first=True)) , pad_sequence(y, batch_first=True)
 
 
-class PipelineTestModel(nn.Module):
-    def __init__(self, vocab_size, emb_dims, output_dims):
-        super(PipelineTestModel, self).__init__()
-        
-        self.vocab_size = vocab_size
-        self.emb_dims = emb_dims
-        self.output_dims = output_dims
-        
-        self.emb = nn.Embedding(self.vocab_size, self.emb_dims)
-        self.fc = nn.LSTM(self.emb_dims, self.output_dims)
-        
-    def forward(self, sentence):
-        print(sentence.shape)
-        emb = self.emb(sentence)
-        print(emb.shape)
-#         tags = F.softmax(self.fc(emb), dim=self.output_dims)
-        tags = self.fc(emb.view(len(sentence), 1, -1))
-        print(tags.shape)
-        return tags    
-    
-    
-class LSTMTagger(nn.Module):
-
-    def __init__(self, embedding_dim, hidden_dim, vocab_size, tagset_size):
-        super(LSTMTagger, self).__init__()
-        self.hidden_dim = hidden_dim
-
-        self.word_embeddings = nn.Embedding(vocab_size, embedding_dim)
-
-        # The LSTM takes word embeddings as inputs, and outputs hidden states
-        # with dimensionality hidden_dim.
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim)
-
-        # The linear layer that maps from hidden state space to tag space
-        self.hidden2tag = nn.Linear(hidden_dim, tagset_size)
-    
-    def forward(self, sentence):
-        batches = sentence.shape[0]
-        embeds = self.word_embeddings(sentence)
-#         print(embeds.shape)
-#         print(embeds.view(len(sentence[-1]), batches, -1).shape)
-        lstm_out, _ = self.lstm(embeds.view(len(sentence[-1]), batches, -1))
-        tag_space = self.hidden2tag(lstm_out.view(len(sentence[-1]) * batches, -1))
-        tag_scores = F.log_softmax(tag_space, dim=1)
-        return tag_scores
-    
 class LstmCnnTagger(nn.Module):
-
     def __init__(self, word_emb_dim, letter_emb_dim, hidden_dim, word_vocab_size, letter_vocab_size, letter_word_size, tagset_size):
         super(LstmCnnTagger, self).__init__()
-        
+
         self.hidden_dim = hidden_dim
         self.letter_word_size = letter_word_size # 15
         self.letter_emb_dim = letter_emb_dim
@@ -238,50 +180,36 @@ class LstmCnnTagger(nn.Module):
 
         self.word_embeddings = nn.Embedding(word_vocab_size, word_emb_dim)
         self.letter_embeddings = nn.Embedding(letter_vocab_size, letter_emb_dim)
-        
-        # Should I add more hidden layers?
+
         self.cnn1 = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=5)
         self.max_pool = nn.MaxPool2d(2,2)
         self.cnn2 = nn.Conv2d(in_channels=32, out_channels=word_emb_dim, kernel_size=3)
         self.max_pool_last = nn.MaxPool2d(2, 10)
 
         self.lstm = nn.LSTM(word_emb_dim * 2, hidden_dim)
-#         self.lstm = nn.LSTM(word_emb_dim, hidden_dim)
-        
         self.hidden2tag = nn.Linear(hidden_dim, tagset_size)
-    
+
     def forward(self, sentence):
         words, letters = sentence
         batches = words.shape[0]
-        
+
         word_embeds = self.word_embeddings(words)
         letter_embeds = self.letter_embeddings(letters.view(-1, self.letter_word_size))
-#         print(letter_embeds.shape)
-#         print(letter_embeds.view(batches, len(words[-1]), self.letter_word_size, self.letter_emb_dim).shape)
-#         print(word_embeds.shape)
-        
+
         cnn_feat = self.cnn1(letter_embeds.view(-1, 1, self.letter_word_size, self.letter_emb_dim))
         cnn_feat = F.relu(self.max_pool(cnn_feat))
         cnn_feat = self.cnn2(cnn_feat)
         cnn_feat = F.relu(self.max_pool_last(cnn_feat))
-        
-#         print(cnn_feat.shape)
-        
+
         concat = torch.cat([
             cnn_feat.view(len(words[-1]), batches, self.word_emb_dim), 
             word_embeds.view(len(words[-1]), batches, -1)
         ], 2)
-        
-#         print(concat.shape)
-#         print(word_embeds.view(len(words[-1]), batches, -1).shape)
-        
-#         print(concat.shape)
-        
-        # Add ReLU?
+
         lstm_out, _ = self.lstm(concat)
         tag_space = self.hidden2tag(lstm_out.view(len(words[-1]) * batches, -1))
         tag_scores = F.log_softmax(tag_space, dim=1)
-        
+
         return tag_scores
 
 
